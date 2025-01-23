@@ -12,81 +12,34 @@ class MicrosoftService {
   createGraphClient() {
     return Client.init({
       authProvider: (done) => {
-        done(null, this.accessToken);
+        if (!this.accessToken) {
+          console.error('Access token is undefined or empty.');
+          done(new Error('Access token is undefined or empty.'));
+        } else {
+          done(null, this.accessToken);
+        }
       }
     });
   }
 
-  async getAuthUrl() {
-    const msalConfig = {
-      auth: {
-        clientId: config.microsoft.clientId,
-        authority: config.microsoft.authority,
-        clientSecret: config.microsoft.clientSecret,
-      }
-    };
-
-    const pca = new msal.ConfidentialClientApplication(msalConfig);
-
-    const authUrlParameters = {
-      scopes: config.microsoft.scopes,
-      redirectUri: config.microsoft.redirectUri,
-      prompt: 'select_account'
-    };
-
-    const authUrl = await pca.getAuthCodeUrl(authUrlParameters);
-    return authUrl;
-  }
-
-  async handleCallback(code) {
-    const msalConfig = {
-      auth: {
-        clientId: config.microsoft.clientId,
-        authority: config.microsoft.authority,
-        clientSecret: config.microsoft.clientSecret,
-      }
-    };
-
-    const pca = new msal.ConfidentialClientApplication(msalConfig);
-
-    const tokenRequest = {
-      code,
-      scopes: config.microsoft.scopes,
-      redirectUri: config.microsoft.redirectUri,
-    };
-
-    try {
-      const response = await pca.acquireTokenByCode(tokenRequest);
-      const tokens = {
-        access_token: response.accessToken,
-        refresh_token: response.refreshToken,
-        scope: response.scopes.join(' '),
-        token_type: response.tokenType,
-        expiry_date: response.expiresOn.getTime(),
-        id_token: response.idToken,
-      };
-
-      this.accessToken = tokens.access_token;
-      const graphClient = this.createGraphClient();
-      const userProfile = await graphClient.api('/me').get();
-
-      return { tokens, email: userProfile.mail || userProfile.userPrincipalName };
-    } catch (error) {
-      console.error('Error acquiring token:', error);
-      throw new Error('Failed to acquire token');
-    }
-  }
-
   async getAuthorizedClient(userId) {
-    const credentials = await OAuthCredential.getCredentials(userId);
+    try {
+      const credentials = await OAuthCredential.getCredentials(userId);
+      console.log('Retrieved credentials:', credentials);
 
-    if (this.graphClient) {
+      if (this.graphClient) {
+        return this.graphClient;
+      }
+
+      this.accessToken = credentials.accessToken;
+      console.log('Set access token:', this.accessToken);
+
+      this.graphClient = this.createGraphClient();
       return this.graphClient;
+    } catch (error) {
+      console.error('Error getting authorized client:', error);
+      throw error;
     }
-
-    this.accessToken = credentials.access_token;
-    this.graphClient = this.createGraphClient();
-    return this.graphClient;
   }
 
   async fetchEmails(userId, jobTitle) {
@@ -106,11 +59,14 @@ class MicrosoftService {
 
       if (response && response.value) {
         console.log(`Found ${response.value.length} unread messages with attachments and subject containing '${jobTitle}'`);
-        response.value.forEach((message, index) => {
-          console.log(`Message ${index + 1}: Subject - ${message.subject}`);
-          console.log(`Message ${index + 1}: From - ${message.from.emailAddress.address}`);
-          console.log(`Message ${index + 1}: Received - ${message.receivedDateTime}`);
-        });
+        for (const message of response.value) {
+          console.log(`Processing message: ${message.subject}`);
+          // Process the email here
+          // ...
+
+          // Mark the email as read
+          await this.markEmailAsRead(userId, message.id);
+        }
       } else {
         console.log('No messages found');
       }
@@ -140,6 +96,19 @@ class MicrosoftService {
       return Buffer.from(response.contentBytes, 'base64');
     } catch (error) {
       console.error('Error fetching attachment:', error);
+      throw error;
+    }
+  }
+
+  async markEmailAsRead(userId, messageId) {
+    try {
+      const graphClient = await this.getAuthorizedClient(userId);
+      await graphClient.api(`/me/messages/${messageId}`).patch({
+        isRead: true
+      });
+      console.log(`Marked email ${messageId} as read`);
+    } catch (error) {
+      console.error('Error marking email as read:', error);
       throw error;
     }
   }

@@ -11,7 +11,9 @@ module.exports = {
       'offline_access',
       'User.Read',
       'Mail.Read',
-      'Mail.ReadWrite'
+      'Mail.ReadWrite',
+      'openid',
+      'profile'
     ],
     tenantId: 'common'
   }

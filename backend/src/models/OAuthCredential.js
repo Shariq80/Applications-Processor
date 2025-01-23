@@ -1,30 +1,12 @@
 const mongoose = require('mongoose');
 
 const oAuthCredentialSchema = new mongoose.Schema({
-  access_token: String,
-  refresh_token: String,
-  scope: String,
-  token_type: String,
-  expiry_date: Number,
-  id_token: String,
-  tenantId: String,
-  lastUpdated: {
-    type: Date,
-    default: Date.now
-  },
-  userId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  },
-  isDefault: {
-    type: Boolean,
-    default: false
-  },
-  email: {
-    type: String,
-    required: true
-  }
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  email: { type: String, required: true, unique: true }, // Enforce unique constraint
+  accessToken: { type: String, required: true },
+  refreshToken: { type: String, required: true },
+  expiresAt: { type: Date, required: true },
+  isDefault: { type: Boolean, default: false }
 }, { timestamps: true });
 
 oAuthCredentialSchema.statics.getCredentials = async function(userId) {
@@ -46,4 +28,5 @@ oAuthCredentialSchema.statics.getCredentials = async function(userId) {
   console.log('Default credentials found:', defaultCred);
   return defaultCred;
 };
+
 module.exports = mongoose.model('OAuthCredential', oAuthCredentialSchema);

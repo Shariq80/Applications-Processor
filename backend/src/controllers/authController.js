@@ -73,25 +73,74 @@ exports.getMicrosoftAuthUrl = async (req, res) => {
   }
 };
 
+
 exports.handleMicrosoftCallback = async (req, res) => {
   try {
-    const { access_token, refresh_token, expires_in, id_token } = req.body;
-    const userId = req.user._id;
+    const { code, state } = req.query;
+
+    console.log('Received code:', code);
+    console.log('Received state:', state);
+
+    // Verify the state token to get the user ID
+    const decodedState = jwt.verify(state, process.env.JWT_SECRET);
+    const userId = decodedState.id;
+
+    console.log('Decoded state:', decodedState);
+    console.log('User ID:', userId);
+
+    // Exchange the authorization code for tokens
+    const msalConfig = {
+      auth: {
+        clientId: config.microsoft.clientId,
+        authority: config.microsoft.authority,
+        clientSecret: config.microsoft.clientSecret,
+      }
+    };
+
+    const pca = new msal.ConfidentialClientApplication(msalConfig);
+
+    const tokenRequest = {
+      code,
+      scopes: config.microsoft.scopes,
+      redirectUri: config.microsoft.redirectUri,
+    };
+
+    const response = await pca.acquireTokenByCode(tokenRequest);
+
+    console.log('Token response:', response);
+
+    const { accessToken, refreshToken, expiresOn, idToken } = response;
+
+    console.log('Access Token:', accessToken);
+    console.log('Refresh Token:', refreshToken);
+    console.log('Expires On:', expiresOn);
+    console.log('ID Token:', idToken);
 
     // Decode the ID token to get user information
-    const decodedToken = jwt.decode(id_token);
+    const decodedToken = jwt.decode(idToken);
     const email = decodedToken.email || decodedToken.preferred_username;
 
+    console.log('Decoded ID Token:', decodedToken);
+    console.log('Email:', email);
+
+    // Check if the Microsoft account is already connected to another user
+    const existingCredential = await OAuthCredential.findOne({ email });
+    if (existingCredential && existingCredential.userId.toString() !== userId) {
+      return res.status(400).json({ error: 'This Microsoft account is already connected to another user.' });
+    }
+
     // Calculate the expiration date
-    const expiresAt = new Date(Date.now() + expires_in * 1000);
+    const expiresAt = new Date(expiresOn);
+
+    console.log('Expires At:', expiresAt);
 
     // Save the credentials to the database
     const credentials = new OAuthCredential({
       userId,
       email,
-      accessToken: access_token,
-      refreshToken: refresh_token,
-      expiresAt
+      accessToken,
+      refreshToken: refreshToken || 'dummy_refresh_token', // Ensure refreshToken is set
+      expiresAt // Ensure expiresAt is set correctly
     });
 
     await credentials.save();
@@ -102,6 +151,7 @@ exports.handleMicrosoftCallback = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
 exports.getMicrosoftAccounts = async (req, res) => {
   try {
     const userId = req.user._id;
