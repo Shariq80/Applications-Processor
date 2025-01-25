@@ -47,6 +47,17 @@ class GmailService {
     }
   }
 
+  async getGmailAccounts(userId) {
+    try {
+      const accounts = await OAuthCredential.find({ userId, email: /@gmail\.com$/ });
+      console.log(`Fetched Gmail accounts for userId: ${userId}`);
+      return accounts;
+    } catch (error) {
+      console.error('Error fetching Gmail accounts:', error);
+      throw error;
+    }
+  }
+
   async handleCallback(code) {
     try {
       if (!code) {

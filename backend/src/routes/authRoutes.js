@@ -17,4 +17,7 @@ router.get('/microsoft/callback', authController.handleMicrosoftCallback);
 // New route to fetch Microsoft accounts
 router.get('/microsoft/accounts', authenticateToken, authController.getMicrosoftAccounts);
 
+// Gmail OAuth routes
+router.get('/gmail/accounts', authenticateToken, authController.getGmailAccounts);
+
 module.exports = router;

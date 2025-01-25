@@ -50,6 +50,9 @@ exports.fetchEmails = async (req, res) => {
     res.json({ success: true, applications: processedEmails, processed: processedEmails.length, total: messages.length });
   } catch (error) {
     console.error('Error in fetchEmails:', error);
+    if (error.message === 'Refresh token is invalid. Please re-authenticate.') {
+      return res.status(401).json({ error: error.message });
+    }
     res.status(500).json({ error: error.message || 'Failed to fetch emails' });
   }
 };
@@ -60,6 +63,7 @@ exports.processEmail = async (emailData, jobTitle, userId) => {
     
     const subject = emailData.subject;
     const from = emailData.from.emailAddress.address;
+    const fromName = emailData.from.emailAddress.name || from.split('@')[0]; // Extract name or use email prefix
 
     if (!subject || !from) {
       throw new Error('Missing required email headers');
@@ -106,13 +110,16 @@ exports.processEmail = async (emailData, jobTitle, userId) => {
     // Get AI score and summary
     const aiResult = await openaiService.scoreResume(resumeText, job.description);
 
+    // Strip HTML tags from email body
+    const emailBody = emailData.body.content.replace(/<\/?[^>]+(>|$)/g, "");
+
     // Create application record
     const application = new Application({
       job: job._id,
       applicantEmail: from,
-      applicantName: from.split('<')[0].trim(),
+      applicantName: fromName,
       emailSubject: subject,
-      emailBody: emailData.body.content || '',
+      emailBody: emailBody,
       attachments: attachments,
       resumeText: resumeText,
       aiScore: aiResult.score,
@@ -233,7 +240,7 @@ exports.sendShortlistedApplications = async (req, res) => {
     }
 
     // Get Microsoft client
-    const microsoft = await microsoftService.getAuthorizedClient();
+    const graphClient = await microsoftService.getAuthorizedClient(req.user._id);
 
     // Create HTML content for email
     const htmlContent = `
@@ -257,50 +264,33 @@ exports.sendShortlistedApplications = async (req, res) => {
       `).join('')}
     `;
 
-    // TODO: Implement Microsoft Graph API send email with attachments
-    // Create message with attachments
-    // const boundary = 'boundary' + Date.now().toString();
-    // const message = [
-    //   `Content-Type: multipart/mixed; boundary=${boundary}`,
-    //   'MIME-Version: 1.0',
-    //   `To: ${req.user.email}`,
-    //   `Subject: Shortlisted Applications for ${applications[0].job.title}`,
-    //   '',
-    //   `--${boundary}`,
-    //   'Content-Type: text/html; charset=utf-8',
-    //   '',
-    //   htmlContent
-    // ];
+    // Create email message with attachments
+    const email = {
+      message: {
+        subject: `Shortlisted Applications for ${applications[0].job.title}`,
+        body: {
+          contentType: 'HTML',
+          content: htmlContent,
+        },
+        toRecipients: [
+          {
+            emailAddress: {
+              address: req.user.email,
+            },
+          },
+        ],
+        attachments: applications.flatMap(app => 
+          app.attachments.map(attachment => ({
+            '@odata.type': '#microsoft.graph.fileAttachment',
+            name: attachment.filename,
+            contentBytes: attachment.data.toString('base64'),
+          }))
+        ),
+      },
+    };
 
-    // Add attachments
-    // for (const app of applications) {
-    //   for (const attachment of app.attachments) {
-    //     message.push(
-    //       `--${boundary}`,
-    //       `Content-Type: ${attachment.contentType}`,
-    //       'Content-Transfer-Encoding: base64',
-    //       `Content-Disposition: attachment; filename="${attachment.filename}"`,
-    //       '',
-    //       attachment.data.toString('base64')
-    //     );
-    //   }
-    // }
-
-    // message.push(`--${boundary}--`);
-
-    // Encode and send the email
-    // const encodedMessage = Buffer.from(message.join('\r\n'))
-    //   .toString('base64')
-    //   .replace(/\+/g, '-')
-    //   .replace(/\//g, '_')
-    //   .replace(/=+$/, '');
-
-    // await gmail.users.messages.send({
-    //   userId: 'me',
-    //   requestBody: {
-    //     raw: encodedMessage
-    //   }
-    // });
+    // Send the email
+    await graphClient.api('/me/sendMail').post(email);
 
     // Update sentAt for all applications
     const updatedApplications = await Promise.all(

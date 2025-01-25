@@ -1,7 +1,8 @@
-import { Fragment } from 'react';
+import { Fragment, useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Disclosure, Menu, Transition } from '@headlessui/react';
 import { useAuth } from '../../context/AuthContext';
+import { AccountContext } from '../../context/AccountContext';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard' }
@@ -9,11 +10,24 @@ const navigation = [
 
 export default function Navbar() {
   const { user, logout } = useAuth();
+  const { selectedMicrosoftAccount, selectedGmailAccount } = useContext(AccountContext);
   const navigate = useNavigate();
 
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const getSelectedAccountType = () => {
+    if (selectedMicrosoftAccount) return 'Microsoft Account Selected';
+    if (selectedGmailAccount) return 'Gmail Account Selected';
+    return null;
+  };
+
+  const getSelectedAccountColor = () => {
+    if (selectedMicrosoftAccount) return 'text-blue-600';
+    if (selectedGmailAccount) return 'text-red-600';
+    return 'text-gray-700';
   };
 
   return (
@@ -41,6 +55,11 @@ export default function Navbar() {
                 </div>
               </div>
               <div className="hidden sm:ml-6 sm:flex sm:items-center">
+                {getSelectedAccountType() && (
+                  <div className={`mr-4 text-sm ${getSelectedAccountColor()}`}>
+                    {getSelectedAccountType()}
+                  </div>
+                )}
                 <Menu as="div" className="relative ml-3">
                   <Menu.Button className="flex rounded-full bg-white text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
                     <span className="sr-only">Open user menu</span>

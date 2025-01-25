@@ -4,7 +4,7 @@ const config = require('../config/auth')
 const microsoftService = require('../services/microsoftService');
 const OAuthCredential = require('../models/OAuthCredential');
 const msal = require('@azure/msal-node')
-
+const gmailService = require('../services/gmailService');
 
 
 exports.login = async (req, res) => {
@@ -156,6 +156,16 @@ exports.getMicrosoftAccounts = async (req, res) => {
   try {
     const userId = req.user._id;
     const accounts = await microsoftService.getMicrosoftAccounts(userId);
+    res.json(accounts);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+exports.getGmailAccounts = async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const accounts = await gmailService.getGmailAccounts(userId);
     res.json(accounts);
   } catch (error) {
     res.status(500).json({ error: error.message });

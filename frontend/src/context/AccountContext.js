@@ -3,10 +3,16 @@ import React, { createContext, useState } from 'react';
 export const AccountContext = createContext();
 
 export const AccountProvider = ({ children }) => {
-  const [selectedAccount, setSelectedAccount] = useState(null);
+  const [selectedMicrosoftAccount, setSelectedMicrosoftAccount] = useState(null);
+  const [selectedGmailAccount, setSelectedGmailAccount] = useState(null);
 
   return (
-    <AccountContext.Provider value={{ selectedAccount, setSelectedAccount }}>
+    <AccountContext.Provider value={{ 
+      selectedMicrosoftAccount, 
+      setSelectedMicrosoftAccount,
+      selectedGmailAccount,
+      setSelectedGmailAccount
+    }}>
       {children}
     </AccountContext.Provider>
   );

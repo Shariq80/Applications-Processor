@@ -27,16 +27,24 @@ class MicrosoftService {
       const credentials = await OAuthCredential.getCredentials(userId);
       console.log('Retrieved credentials:', credentials);
 
+      // Check if the token is expired
+      if (new Date() >= new Date(credentials.expiresAt)) {
+        console.log('Access token is expired, refreshing...');
+        await this.refreshAccessToken(userId);
+      } else {
+        this.accessToken = credentials.accessToken;
+      }
+
       if (this.graphClient) {
         return this.graphClient;
       }
 
-      this.accessToken = credentials.accessToken;
-      console.log('Set access token:', this.accessToken);
-
       this.graphClient = this.createGraphClient();
       return this.graphClient;
     } catch (error) {
+      if (error.message === 'No OAuth credentials found') {
+        throw new Error('Please connect your Microsoft or Gmail account.');
+      }
       console.error('Error getting authorized client:', error);
       throw error;
     }
@@ -113,9 +121,9 @@ class MicrosoftService {
     }
   }
 
-  async sendEmail(to, subject, message, attachments = []) {
+    async sendEmail(to, subject, message, userId, attachments = []) {
     try {
-      const graphClient = await this.getAuthorizedClient();
+      const graphClient = await this.getAuthorizedClient(userId);
       const email = {
         message: {
           subject: subject,
@@ -137,7 +145,7 @@ class MicrosoftService {
           })),
         },
       };
-
+  
       await graphClient.api('/me/sendMail').post(email);
       console.log(`Email sent to ${to} with subject '${subject}'`);
     } catch (error) {
@@ -156,6 +164,48 @@ class MicrosoftService {
       throw error;
     }
   }
+
+  async refreshAccessToken(userId) {
+    try {
+      const credentials = await OAuthCredential.getCredentials(userId);
+      const msalConfig = {
+        auth: {
+          clientId: config.microsoft.clientId,
+          authority: config.microsoft.authority,
+          clientSecret: config.microsoft.clientSecret,
+        }
+      };
+
+      const pca = new msal.ConfidentialClientApplication(msalConfig);
+
+      const tokenRequest = {
+        refreshToken: credentials.refreshToken,
+        scopes: config.microsoft.scopes,
+      };
+
+      const response = await pca.acquireTokenByRefreshToken(tokenRequest);
+
+      const { accessToken, refreshToken, expiresOn } = response;
+      const expiresAt = new Date(expiresOn);
+
+      await OAuthCredential.findOneAndUpdate(
+        { _id: credentials._id },
+        { accessToken, refreshToken, expiresAt }
+      );
+
+      this.accessToken = accessToken;
+      console.log('Access token refreshed successfully');
+    } catch (error) {
+      console.error('Error refreshing access token:', error);
+      if (error.errorCode === 'invalid_grant') {
+        // Handle invalid refresh token
+        await OAuthCredential.findOneAndDelete({ _id: credentials._id });
+        throw new Error('Refresh token is invalid. Please re-authenticate.');
+      }
+      throw error;
+    }
+  }
+
 }
 
 module.exports = new MicrosoftService();
