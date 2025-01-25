@@ -6,6 +6,7 @@ import ApplicationModal from '../components/Applications/ApplicationModal';
 import DeleteConfirmModal from '../components/Applications/DeleteConfirmModal';
 import ApplicationsTable from '../components/Applications/ApplicationsTable';
 import Button from '../components/Common/Button';
+import AiScoreInput from '../components/Common/AiScoreInput';
 
 export default function JobReview() {
   const { id } = useParams();
@@ -16,6 +17,9 @@ export default function JobReview() {
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedApplications, setSelectedApplications] = useState([]);
+  const [dateFilter, setDateFilter] = useState('');
+  const [aiScoreFilter, setAiScoreFilter] = useState('');
 
   const fetchJobAndApplications = useCallback(async () => {
     try {
@@ -118,6 +122,32 @@ export default function JobReview() {
     }
   };
 
+  const handleDeleteSelectedApplications = async () => {
+    const toastId = toast.loading('Deleting selected applications...');
+    try {
+      await api.post('/applications/delete-multiple', { applicationIds: selectedApplications });
+      toast.success('Selected applications deleted successfully', { id: toastId });
+      setSelectedApplications([]);
+      await fetchJobAndApplications();
+    } catch (error) {
+      toast.error('Failed to delete selected applications', { id: toastId });
+    }
+  };
+
+  const handleSelectApplication = (applicationId, isSelected) => {
+    if (applicationId === 'all') {
+      if (isSelected) {
+        setSelectedApplications(applications.map(app => app._id));
+      } else {
+        setSelectedApplications([]);
+      }
+    } else {
+      setSelectedApplications(prevSelected =>
+        isSelected ? [...prevSelected, applicationId] : prevSelected.filter(id => id !== applicationId)
+      );
+    }
+  };
+
   // Update the helper function
   const hasUnsentShortlistedApplications = () => {
     const unsentCount = applications.filter(app => app.isShortlisted && !app.sentAt).length;
@@ -127,6 +157,12 @@ export default function JobReview() {
   const canSendApplications = () => {
     return hasUnsentShortlistedApplications();  // Remove the hiringManagerEmail check
   };
+
+  const filteredApplications = applications.filter(app => {
+    const matchesDate = dateFilter ? new Date(app.createdAt) <= new Date(dateFilter) : true;
+    const matchesAiScore = aiScoreFilter ? app.aiScore <= aiScoreFilter : true;
+    return matchesDate && matchesAiScore;
+  });
 
   if (loading) {
     return (
@@ -169,28 +205,65 @@ export default function JobReview() {
           Process New Applications
         </Button>
 
-        <Button
-          onClick={handleSendShortlisted}
-          variant="success"
-          disabled={!canSendApplications()}
-          title={!hasUnsentShortlistedApplications()
-            ? "No unsent shortlisted applications"
-            : "Send shortlisted applications"}
-        >
-          Send Shortlisted Applications
-          {hasUnsentShortlistedApplications() && (
-            <span className="ml-1">
-              ({applications.filter(app => app.isShortlisted && !app.sentAt).length})
-            </span>
-          )}
-        </Button>
+        <div className="flex space-x-4">
+          <Button
+            onClick={handleSendShortlisted}
+            variant="success"
+            disabled={!canSendApplications()}
+            title={!hasUnsentShortlistedApplications()
+              ? "No unsent shortlisted applications"
+              : "Send shortlisted applications"}
+          >
+            Send Shortlisted Applications
+            {hasUnsentShortlistedApplications() && (
+              <span className="ml-1">
+                ({applications.filter(app => app.isShortlisted && !app.sentAt).length})
+              </span>
+            )}
+          </Button>
+
+          <Button
+            onClick={handleDeleteSelectedApplications}
+            variant="danger"
+            disabled={selectedApplications.length === 0}
+          >
+            Delete Selected Applications
+          </Button>
+        </div>
+      </div>
+
+      <div className="mb-6 flex space-x-4">
+        <div>
+          <label htmlFor="dateFilter" className="block text-sm font-medium text-gray-700">
+            Filter by Date
+          </label>
+          <input
+            type="date"
+            id="dateFilter"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+          />
+        </div>
+        <div>
+          <label htmlFor="aiScoreFilter" className="block text-sm font-medium text-gray-700">
+            Filter by AI Score
+          </label>
+          <AiScoreInput
+            value={aiScoreFilter}
+            onChange={setAiScoreFilter}
+            min={0}
+            max={10}
+          />
+        </div>
       </div>
 
       <div className="mt-8">
         <ApplicationsTable 
-          applications={applications}
+          applications={filteredApplications}
           onViewDetails={setSelectedApp}
           onToggleShortlist={handleToggleShortlist}
+          onSelectApplication={handleSelectApplication}
         />
       </div>
 

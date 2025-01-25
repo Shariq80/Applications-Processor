@@ -332,3 +332,15 @@ exports.deleteApplication = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
+
+exports.deleteMultipleApplications = async (req, res) => {
+  try {
+    const { applicationIds } = req.body;
+    const result = await Application.deleteMany({ _id: { $in: applicationIds } });
+    res.json({ message: 'Applications deleted successfully', result });
+  } catch (error) {
+    console.error('Error deleting applications:', error);
+    res.status(500).json({ error: error.message });
+  }
+};

@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 
-export default function ApplicationsTable({ applications, onViewDetails, onToggleShortlist }) {
+export default function ApplicationsTable({ applications, onViewDetails, onToggleShortlist, onSelectApplication }) {
   const [sortField, setSortField] = useState('createdAt');
   const [sortDirection, setSortDirection] = useState('desc');
+  const [selectAll, setSelectAll] = useState(false);
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -12,6 +13,11 @@ export default function ApplicationsTable({ applications, onViewDetails, onToggl
       setSortField(field);
       setSortDirection('asc');
     }
+  };
+
+  const handleSelectAll = (isSelected) => {
+    setSelectAll(isSelected);
+    applications.forEach(app => onSelectApplication(app._id, isSelected));
   };
 
   const sortedApplications = [...applications].sort((a, b) => {
@@ -45,6 +51,13 @@ export default function ApplicationsTable({ applications, onViewDetails, onToggl
       <table className="min-w-full divide-y divide-gray-300">
         <thead className="bg-gray-50">
           <tr>
+            <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
+              <input
+                type="checkbox"
+                checked={selectAll}
+                onChange={(e) => handleSelectAll(e.target.checked)}
+              />
+            </th>
             <th className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">
               No.
             </th>
@@ -80,6 +93,13 @@ export default function ApplicationsTable({ applications, onViewDetails, onToggl
         <tbody className="divide-y divide-gray-200 bg-white">
           {sortedApplications.map((app, index) => (
             <tr key={app._id} className="hover:bg-gray-50">
+              <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                <input
+                  type="checkbox"
+                  checked={selectAll}
+                  onChange={(e) => onSelectApplication(app._id, e.target.checked)}
+                />
+              </td>
               <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
                 {index + 1}
               </td>
@@ -128,7 +148,7 @@ export default function ApplicationsTable({ applications, onViewDetails, onToggl
           ))}
           {applications.length === 0 && (
             <tr>
-              <td colSpan="7" className="px-3 py-4 text-sm text-gray-500 text-center">
+              <td colSpan="8" className="px-3 py-4 text-sm text-gray-500 text-center">
                 No applications found
               </td>
             </tr>

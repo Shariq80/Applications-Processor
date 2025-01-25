@@ -22,5 +22,6 @@ router.get('/:id', applicationController.getApplication);
 router.post('/process-email', applicationController.processEmail);
 router.get('/:applicationId/attachments/:attachmentId', applicationController.downloadAttachment);
 router.delete('/:id', applicationController.deleteApplication);
+router.post('/delete-multiple', applicationController.deleteMultipleApplications);
 
 module.exports = router;
