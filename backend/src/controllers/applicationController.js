@@ -1,4 +1,5 @@
 const microsoftService = require('../services/microsoftService');
+const gmailService = require('../services/gmailService');
 const openaiService = require('../services/openaiService');
 const Application = require('../models/Application');
 const Job = require('../models/Job');
@@ -10,6 +11,7 @@ exports.fetchEmails = async (req, res) => {
   try {
     const { jobTitle } = req.query;
     const userId = req.user._id; // Ensure userId is retrieved from req.user
+    const selectedAccount = req.body.selectedAccount; // Get the selected account from the request body
 
     if (!jobTitle) {
       return res.status(400).json({ error: 'Job title is required' });
@@ -21,14 +23,23 @@ exports.fetchEmails = async (req, res) => {
     }
 
     // Retrieve OAuth credentials
-    const activeCredential = await OAuthCredential.getCredentials(userId);
+    const activeCredential = await OAuthCredential.findOne({ userId, email: selectedAccount.email });
     if (!activeCredential) {
       return res.status(401).json({ error: 'No OAuth credentials found' });
     }
 
-    // Get authorized Microsoft client
-    const microsoft = await microsoftService.getAuthorizedClient(userId);
-    const messages = await microsoftService.fetchEmails(userId, jobTitle);
+    let messages;
+    if (activeCredential.provider === 'microsoft') {
+      // Get authorized Microsoft client
+      const microsoft = await microsoftService.getAuthorizedClient(userId);
+      messages = await microsoftService.fetchEmails(userId, jobTitle);
+    } else if (activeCredential.provider === 'gmail') {
+      // Get authorized Gmail client
+      const gmail = await gmailService.getAuthorizedClient(userId);
+      messages = await gmailService.fetchEmails(userId, jobTitle);
+    } else {
+      return res.status(400).json({ error: 'Unsupported email provider' });
+    }
 
     const existingMessageIds = await Application.distinct('emailMetadata.messageId', { job: existingJob._id });
     const processedEmails = [];
@@ -36,7 +47,9 @@ exports.fetchEmails = async (req, res) => {
     for (const message of messages) {
       if (existingMessageIds.includes(message.id)) continue;
 
-      const messageData = await microsoftService.getEmailContent(userId, message.id); // Pass userId here
+      const messageData = await (activeCredential.provider === 'microsoft'
+        ? microsoftService.getEmailContent(userId, message.id)
+        : gmailService.getEmailContent(userId, message.id));
       if (!messageData.subject.toLowerCase().includes(jobTitle.toLowerCase())) continue;
 
       const processedEmail = await this.processEmail(messageData, jobTitle, userId);

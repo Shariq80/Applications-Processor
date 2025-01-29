@@ -140,7 +140,8 @@ exports.handleMicrosoftCallback = async (req, res) => {
       email,
       accessToken,
       refreshToken: refreshToken || 'dummy_refresh_token', // Ensure refreshToken is set
-      expiresAt // Ensure expiresAt is set correctly
+      expiresAt,
+      provider: 'microsoft',
     });
 
     await credentials.save();

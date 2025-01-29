@@ -9,10 +9,8 @@ const AccountSelector = () => {
   const [isConnectingMicrosoft, setIsConnectingMicrosoft] = useState(false);
   const [isConnectingGmail, setIsConnectingGmail] = useState(false);
   const { 
-    selectedMicrosoftAccount, 
-    setSelectedMicrosoftAccount,
-    selectedGmailAccount,
-    setSelectedGmailAccount
+    selectedAccount, 
+    selectAccount
   } = useContext(AccountContext);
 
   useEffect(() => {
@@ -131,61 +129,91 @@ const AccountSelector = () => {
     }
   };
 
-  const handleMicrosoftAccountSelect = (account) => {
-    setSelectedMicrosoftAccount(account);
-    toast.success('Microsoft account selected successfully');
-  };
-
-  const handleGmailAccountSelect = (account) => {
-    setSelectedGmailAccount(account);
-    toast.success('Gmail account selected successfully');
+  const handleAccountSelect = (account) => {
+    selectAccount(account);
+    toast.success(`${account.provider} account selected successfully`);
   };
 
   return (
-    <div className="bg-white shadow rounded-lg p-6 mb-6">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-xl font-semibold text-gray-900">Connect Accounts</h2>
-        <div>
-          <button
-            onClick={handleConnectMicrosoft}
-            disabled={isConnectingMicrosoft}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 mr-2"
-          >
-            {isConnectingMicrosoft ? 'Connecting...' : 'Connect Microsoft Account'}
-          </button>
-          <button
-            onClick={handleConnectGmail}
-            disabled={isConnectingGmail}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
-          >
-            {isConnectingGmail ? 'Connecting...' : 'Connect Gmail Account'}
-          </button>
+    <>
+      <div className="bg-white shadow rounded-lg p-6 mb-6">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-semibold text-gray-900">Connect Accounts</h2>
+          <div>
+            <button
+              onClick={handleConnectMicrosoft}
+              disabled={isConnectingMicrosoft}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 mr-2"
+            >
+              {isConnectingMicrosoft ? 'Connecting...' : 'Connect Microsoft Account'}
+            </button>
+            <button
+              onClick={handleConnectGmail}
+              disabled={isConnectingGmail}
+              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50"
+            >
+              {isConnectingGmail ? 'Connecting...' : 'Connect Gmail Account'}
+            </button>
+          </div>
         </div>
-      </div>
 
-      <div className="mb-6">
-        <h3 className="text-lg font-medium text-gray-900">Select Account</h3>
-        <div className="mt-2">
+        <div className="mb-6">
+          <h3 className="text-lg font-medium text-gray-900">Select Account</h3>
+          <div className="mt-2">
+            <div className="flex items-center mb-4">
+              <input
+                id="microsoft-account"
+                name="account"
+                type="radio"
+                checked={selectedAccount?.provider === 'microsoft'}
+                onChange={() => handleAccountSelect(microsoftAccounts[0])}
+                className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                disabled={!microsoftAccounts.length}
+              />
+              <label htmlFor="microsoft-account" className="ml-3 block text-sm font-medium text-gray-700">
+                Microsoft Account
+              </label>
+            </div>
+            {microsoftAccounts.length ? (
+              <ul className="space-y-2">
+                {microsoftAccounts.map((account) => (
+                  <li key={account.email}>
+                    <button
+                      onClick={() => handleAccountSelect(account)}
+                      className="w-full text-left px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                    >
+                      {account.email}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-sm text-gray-500">No Microsoft account connected</p>
+            )}
+          </div>
+        </div>
+
+        <div>
           <div className="flex items-center mb-4">
             <input
-              id="microsoft-account"
+              id="gmail-account"
               name="account"
               type="radio"
-              checked={!!selectedMicrosoftAccount}
-              onChange={() => handleMicrosoftAccountSelect(microsoftAccounts[0])}
-              className="h-4 w-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-              disabled={!microsoftAccounts.length}
+              checked={selectedAccount?.provider === 'gmail'}
+              onChange={() => handleAccountSelect(gmailAccounts[0])}
+              className="h-4 w-4 text-red-600 border-gray-300 focus:ring-red-500"
+              disabled={!gmailAccounts.length}
             />
-            <label htmlFor="microsoft-account" className="ml-3 block text-sm font-medium text-gray-700">
-              Microsoft Account
+            <label htmlFor="gmail-account" className="ml-3 block text-sm font-medium text-gray-700">
+              Gmail Account
             </label>
           </div>
-          {microsoftAccounts.length ? (
+          {gmailAccounts.length ? (
             <ul className="space-y-2">
-              {microsoftAccounts.map((account) => (
+              {gmailAccounts.map((account) => (
                 <li key={account.email}>
                   <button
-                    onClick={() => handleMicrosoftAccountSelect(account)}
+                    onClick={() => handleAccountSelect(account)}
                     className="w-full text-left px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
                   >
                     {account.email}
@@ -194,44 +222,11 @@ const AccountSelector = () => {
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-gray-500">No Microsoft account connected</p>
+            <p className="text-sm text-gray-500">No Gmail account connected</p>
           )}
         </div>
       </div>
-
-      <div>
-        <div className="flex items-center mb-4">
-          <input
-            id="gmail-account"
-            name="account"
-            type="radio"
-            checked={!!selectedGmailAccount}
-            onChange={() => handleGmailAccountSelect(gmailAccounts[0])}
-            className="h-4 w-4 text-red-600 border-gray-300 focus:ring-red-500"
-            disabled={!gmailAccounts.length}
-          />
-          <label htmlFor="gmail-account" className="ml-3 block text-sm font-medium text-gray-700">
-            Gmail Account
-          </label>
-        </div>
-        {gmailAccounts.length ? (
-          <ul className="space-y-2">
-            {gmailAccounts.map((account) => (
-              <li key={account.email}>
-                <button
-                  onClick={() => handleGmailAccountSelect(account)}
-                  className="w-full text-left px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                >
-                  {account.email}
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-gray-500">No Gmail account connected</p>
-        )}
-      </div>
-    </div>
+    </>
   );
 };
 

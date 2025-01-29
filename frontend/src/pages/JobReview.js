@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useContext } from 'react';
 import { useParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import api from '../services/api';
@@ -7,6 +7,7 @@ import DeleteConfirmModal from '../components/Applications/DeleteConfirmModal';
 import ApplicationsTable from '../components/Applications/ApplicationsTable';
 import Button from '../components/Common/Button';
 import AiScoreInput from '../components/Common/AiScoreInput';
+import { AccountContext } from '../context/AccountContext';
 
 export default function JobReview() {
   const { id } = useParams();
@@ -20,6 +21,7 @@ export default function JobReview() {
   const [selectedApplications, setSelectedApplications] = useState([]);
   const [dateFilter, setDateFilter] = useState('');
   const [aiScoreFilter, setAiScoreFilter] = useState('');
+  const { selectedAccount } = useContext(AccountContext);
 
   const fetchJobAndApplications = useCallback(async () => {
     try {
@@ -43,13 +45,21 @@ export default function JobReview() {
   }, [fetchJobAndApplications]);
 
   const handleFetchEmails = async () => {
-    if (!job?.title) return;
-    
+    if (!job?.title) {
+      toast.error('Job title is required');
+      return;
+    }
+  
+    if (!selectedAccount) {
+      toast.error('Please select an account before fetching emails');
+      return;
+    }
+  
     setProcessing(true);
     const toastId = toast.loading('Processing new applications...');
-    
+  
     try {
-      const response = await api.get(`/applications/fetch-emails?jobTitle=${encodeURIComponent(job.title)}`);
+      const response = await api.post(`/applications/fetch-emails?jobTitle=${encodeURIComponent(job.title)}`, { selectedAccount });
       if (response.data.applications) {
         await fetchJobAndApplications();
         toast.success('Successfully processed new applications', { id: toastId });
@@ -60,7 +70,7 @@ export default function JobReview() {
       setProcessing(false);
     }
   };
-
+  
   const handleToggleShortlist = async (applicationId) => {
     const toastId = toast.loading('Updating shortlist status...');
     try {

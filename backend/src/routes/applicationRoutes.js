@@ -3,7 +3,7 @@ const router = express.Router();
 const applicationController = require('../controllers/applicationController');
 
 // Put specific routes before parameterized routes
-router.get('/fetch-emails', (req, res, next) => {
+router.post('/fetch-emails', (req, res, next) => {
   applicationController.fetchEmails(req, res, next);
 });
 

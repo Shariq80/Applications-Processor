@@ -6,8 +6,10 @@ const oAuthCredentialSchema = new mongoose.Schema({
   accessToken: { type: String, required: true },
   refreshToken: { type: String, required: true },
   expiresAt: { type: Date, required: true },
-  isDefault: { type: Boolean, default: false }
+  provider: { type: String, required: true, enum: ['microsoft', 'gmail'] },
 }, { timestamps: true });
+
+oAuthCredentialSchema.index({ userId: 1, provider: 1 }, { unique: true });
 
 oAuthCredentialSchema.statics.getCredentials = async function(userId) {
   console.log(`Fetching OAuth credentials for userId: ${userId}`);
