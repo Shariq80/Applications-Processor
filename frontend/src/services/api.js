@@ -20,4 +20,10 @@ api.downloadAttachment = async (applicationId, attachmentId) => {
   }
 };
 
+// Set the token from localStorage if it exists
+const token = localStorage.getItem('token');
+if (token) {
+  api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+}
+
 export default api;

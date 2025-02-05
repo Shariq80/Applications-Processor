@@ -1,195 +1,147 @@
 const { google } = require('googleapis');
+const OAuth2 = google.auth.OAuth2;
 const OAuthCredential = require('../models/OAuthCredential');
-const resumeParserService = require('./resumeParserService');
-const User = require('../models/User');
 
-class GmailService {
-  constructor() {
-    this.oauth2Client = null;
-    this.gmail = null;
-  }
+const oauth2Client = new OAuth2(
+  process.env.GMAIL_CLIENT_ID,
+  process.env.GMAIL_CLIENT_SECRET,
+  process.env.GMAIL_REDIRECT_URI
+);
 
-  createOAuth2Client() {
-    return new google.auth.OAuth2(
-      process.env.GOOGLE_CLIENT_ID,
-      process.env.GOOGLE_CLIENT_SECRET,
-      process.env.GOOGLE_REDIRECT_URI
-    );
-  }
+const getGmailAuthUrl = (token) => {
+  const scopes = [
+    'https://www.googleapis.com/auth/gmail.readonly',
+    'https://www.googleapis.com/auth/gmail.modify',
+    'https://www.googleapis.com/auth/gmail.send',
+    'https://www.googleapis.com/auth/userinfo.email',
+    'https://www.googleapis.com/auth/userinfo.profile',
+    'openid'
+  ];
+  return oauth2Client.generateAuthUrl({
+    access_type: 'offline',
+    scope: scopes,
+    state: token,
+    prompt:'select_account'
+  });
+};
 
-  async getAuthUrl() {
-    this.initializeOAuth2Client();
-    const SCOPES = [
-      'https://www.googleapis.com/auth/gmail.readonly',
-      'https://www.googleapis.com/auth/gmail.modify',
-      'https://www.googleapis.com/auth/gmail.send',
-      'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/userinfo.profile',
-      'openid'
-    ];
-
-    return this.oauth2Client.generateAuthUrl({
-      access_type: 'offline',
-      scope: SCOPES,
-      prompt: 'consent',
-      include_granted_scopes: true
-    });
-  }
-
-  initializeOAuth2Client() {
-    if (!this.oauth2Client) {
-      this.oauth2Client = new google.auth.OAuth2(
-        process.env.GOOGLE_CLIENT_ID,
-        process.env.GOOGLE_CLIENT_SECRET,
-        process.env.GOOGLE_REDIRECT_URI
-      );
-      this.oauth2Client.setMaxListeners(20);
-    }
-  }
-
-  async getGmailAccounts(userId) {
-    try {
-      const accounts = await OAuthCredential.find({ userId, email: /@gmail\.com$/ });
-      console.log(`Fetched Gmail accounts for userId: ${userId}`);
-      return accounts;
-    } catch (error) {
-      console.error('Error fetching Gmail accounts:', error);
-      throw error;
-    }
-  }
-
-  async handleCallback(code) {
-    try {
-      if (!code) {
-        throw new Error('Authorization code is required');
-      }
-
-      this.oauth2Client = this.createOAuth2Client();
-      const { tokens } = await this.oauth2Client.getToken(code);
-      
-      // Get Gmail address
-      this.oauth2Client.setCredentials(tokens);
-      const gmail = google.gmail({ version: 'v1', auth: this.oauth2Client });
-      const profile = await gmail.users.getProfile({ userId: 'me' });
-      
-      return {
-        tokens,
-        email: profile.data.emailAddress
-      };
-
-    } catch (error) {
-      console.error('HandleCallback Error:', error);
-      throw error;
-    }
-  }
-
-  async getAuthorizedClient(userId) {
-    try {
-      const credentials = await OAuthCredential.getCredentials(userId);
-      
-      if (this.gmail) {
-        return this.gmail;
-      }
-
-      this.oauth2Client = this.createOAuth2Client();
-      this.oauth2Client.setCredentials({
-        access_token: credentials.access_token,
-        refresh_token: credentials.refresh_token,
-        expiry_date: credentials.expiry_date,
-        token_type: credentials.token_type,
-        scope: credentials.scope
-      });
-
-      if (!this.oauth2Client.listenerCount('tokens')) {
-        this.oauth2Client.on('tokens', async (tokens) => {
-          if (tokens.refresh_token) {
-            await OAuthCredential.findOneAndUpdate(
-              { _id: credentials._id },
-              { ...tokens }
-            );
-          }
-        });
-      }
-
-      this.gmail = google.gmail({ version: 'v1', auth: this.oauth2Client });
-      return this.gmail;
-    } catch (error) {
-      console.error('Error getting authorized client:', error);
-      throw error;
-    }
-  }
-
-  async getEmailContent(messageId) {
-    try {
-      const gmail = await this.getAuthorizedClient();
-      
-      const message = await gmail.users.messages.get({
-        userId: 'me',
-        id: messageId,
-        format: 'full'
-      });
-
-      return message.data;
-    } catch (error) {
-      console.error('Error fetching email content:', error);
-      throw error;
-    }
-  }
-
-  async sendEmail(to, subject, message, attachments = []) {
-    const gmail = await this.getAuthorizedClient();
+const getGmailTokens = async (code, userId) => {
+  try {
+    const { tokens } = await oauth2Client.getToken(code);
     
-    // Create email content
-    let email = [
-      'Content-Type: text/html; charset=utf-8',
-      'MIME-Version: 1.0',
-      `To: ${to}`,
-      'From: me',
-      `Subject: ${subject}`,
-      '',
-      message
-    ].join('\r\n');
-
-    if (attachments.length > 0) {
-      const boundary = 'boundary' + Date.now().toString();
-      email = [
-        `Content-Type: multipart/mixed; boundary=${boundary}`,
-        'MIME-Version: 1.0',
-        `To: ${to}`,
-        'From: me',
-        `Subject: ${subject}`,
-        '',
-        `--${boundary}`,
-        'Content-Type: text/html; charset=utf-8',
-        '',
-        message,
-      ].join('\r\n');
-
-      // Add attachments
-      for (const attachment of attachments) {
-        email += [
-          '',
-          `--${boundary}`,
-          `Content-Type: ${attachment.contentType}`,
-          'Content-Transfer-Encoding: base64',
-          `Content-Disposition: attachment; filename="${attachment.filename}"`,
-          '',
-          attachment.data.toString('base64').replace(/(.{76})/g, "$1\r\n"),
-        ].join('\r\n');
-      }
-
-      email += `\r\n--${boundary}--`;
+    if (!tokens.access_token) {
+      throw new Error('No access token received');
     }
 
-    const encodedEmail = Buffer.from(email).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
+    // Set default expiry if not provided
+    if (!tokens.expiry_time) {
+      tokens.expiry_time = 3600; // 1 hour in seconds
+    }
 
-    await gmail.users.messages.send({
-      userId: 'me',
-      requestBody: {
-        raw: encodedEmail
-      }
-    });
+    oauth2Client.setCredentials(tokens);
+
+    // Save the tokens to the database
+    const credential = await OAuthCredential.findOneAndUpdate(
+      { userId: userId, provider: 'gmail' },
+      {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: new Date(Date.now() + tokens.expiry_time * 1000),
+      },
+      { upsert: true, new: true }
+    );
+
+    return tokens;
+  } catch (error) {
+    console.error('Error getting Gmail tokens:', error);
+    throw error;
   }
-}
+};
 
-module.exports = new GmailService();
+const getAuthorizedClient = async (userId) => {
+  // Fetch OAuth credentials from the database
+  const credential = await OAuthCredential.findOne({ userId, provider: 'gmail' });
+  if (!credential) {
+    throw new Error('No OAuth credentials found for Gmail');
+  }
+  oauth2Client.setCredentials({
+    access_token: credential.accessToken,
+    refresh_token: credential.refreshToken,
+  });
+
+  // Check if the token is expired
+  if (new Date() >= new Date(credential.expiresAt)) {
+    console.log('Access token is expired, refreshing...');
+    await refreshAccessToken(userId);
+  }
+
+  return google.gmail({ version: 'v1', auth: oauth2Client });
+};
+
+const refreshAccessToken = async (userId) => {
+  const credential = await OAuthCredential.findOne({ userId, provider: 'gmail' });
+  if (!credential) {
+    throw new Error('No OAuth credentials found for Gmail');
+  }
+
+  oauth2Client.setCredentials({
+    refresh_token: credential.refreshToken,
+  });
+
+  try {
+    const tokens = await oauth2Client.refreshAccessToken();
+    const { access_token, expiry_date } = tokens.credentials;
+
+    credential.accessToken = access_token;
+    credential.expiresAt = new Date(expiry_date);
+    await credential.save();
+
+    oauth2Client.setCredentials(tokens.credentials);
+  } catch (error) {
+    console.error('Error refreshing access token:', error);
+    throw error;
+  }
+};
+
+const fetchEmails = async (userId, jobTitle) => {
+  const gmail = await getAuthorizedClient(userId);
+  const res = await gmail.users.messages.list({
+    userId: 'me',
+    q: `subject:${jobTitle}`,
+  });
+  return res.data.messages || [];
+};
+
+const getEmailContent = async (messageId) => {
+  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+  const res = await gmail.users.messages.get({
+    userId: 'me',
+    id: messageId,
+  });
+  const message = res.data;
+  const body = message.payload.parts.find(part => part.mimeType === 'text/plain').body.data;
+  const decodedBody = Buffer.from(body, 'base64').toString('utf-8');
+  return {
+    subject: message.payload.headers.find(header => header.name === 'Subject').value,
+    from: message.payload.headers.find(header => header.name === 'From').value,
+    date: message.payload.headers.find(header => header.name === 'Date').value,
+    body: decodedBody,
+  };
+};
+
+const getUserInfo = async (accessToken) => {
+  oauth2Client.setCredentials({ access_token: accessToken });
+  const oauth2 = google.oauth2({ version: 'v2', auth: oauth2Client });
+  const userInfo = await oauth2.userinfo.get();
+  return userInfo.data;
+};
+
+module.exports = {
+  getGmailAuthUrl,
+  getGmailTokens,
+  getAuthorizedClient,
+  fetchEmails,
+  getEmailContent,
+  getUserInfo,
+  refreshAccessToken,
+};

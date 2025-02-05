@@ -17,10 +17,7 @@ const Dashboard = () => {
   const [showConfirmationModal, setShowConfirmationModal] = useState(false);
   const [jobToDelete, setJobToDelete] = useState(null);
   const navigate = useNavigate();
-  const { 
-    selectedMicrosoftAccount, 
-    selectedGmailAccount
-  } = useContext(AccountContext);
+  const { selectedAccount } = useContext(AccountContext);
 
   const fetchJobs = useCallback(async () => {
     try {

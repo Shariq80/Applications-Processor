@@ -1,7 +1,7 @@
 const jwt = require('./jwt');
 
 module.exports = {
-  jwt,
+  secret: process.env.JWT_SECRET,
   microsoft: {
     clientId: process.env.OUTLOOK_CLIENT_ID,
     clientSecret: process.env.OUTLOOK_CLIENT_SECRET,
@@ -16,5 +16,10 @@ module.exports = {
       'profile'
     ],
     tenantId: 'common'
+  },
+  gmail: {
+    clientId: process.env.GMAIL_CLIENT_ID,
+    clientSecret: process.env.GMAIL_CLIENT_SECRET,
+    redirectUri: process.env.GMAIL_REDIRECT_URI
   }
 };

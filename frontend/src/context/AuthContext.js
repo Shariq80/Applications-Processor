@@ -1,104 +1,55 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { 
-  getStoredToken, 
-  setStoredToken, 
-  removeStoredToken,
-  setStoredUserId 
-} from '../services/storage';
+import React, { createContext, useState, useContext } from 'react';
 import api from '../services/api';
+import { toast } from 'react-toastify';
+import { jwtDecode } from 'jwt-decode'; // Correct import statement
 
-const AuthContext = createContext(null);
+const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [initialized, setInitialized] = useState(false);
-
-  const setupAxiosInterceptors = useCallback(() => {
-    api.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        if (error.response?.status === 401) {
-          logout();
-        }
-        return Promise.reject(error);
-      }
-    );
-  }, []);
-
-  const logout = useCallback(() => {
-    removeStoredToken();
-    delete api.defaults.headers.common['Authorization'];
-    setUser(null);
-  }, []);
-
-  const checkAuthStatus = useCallback(async () => {
-    try {
-      const token = getStoredToken();
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-
-      // Set token in axios defaults
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
-      const response = await api.get('/auth/check');
-      setUser(response.data);
-    } catch (error) {
-      console.error('Auth check failed:', error);
-      logout();
-    } finally {
-      setLoading(false);
-    }
-  }, [logout]);
-
-  // Initialize auth check and axios interceptors
-  useEffect(() => {
-    if (!initialized) {
-      setupAxiosInterceptors();
-      checkAuthStatus();
-      setInitialized(true);
-    }
-  }, [initialized, setupAxiosInterceptors, checkAuthStatus]);
+  const [token, setToken] = useState(null);
 
   const login = async (email, password) => {
     try {
       const response = await api.post('/auth/login', { email, password });
-      const { token, user } = response.data;
-      
-      setStoredToken(token);
-      setStoredUserId(user.id);
-      
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      console.log('Login response:', response.data);
+
+      const { token } = response.data;
+      if (!token) {
+        throw new Error('Invalid login response');
+      }
+
+      // Decode the token to get the user information
+      const decoded = jwtDecode(token);
+      const user = { id: decoded.userId, email };
+
       setUser(user);
-      
-      return user;
+      setToken(token);
+      localStorage.setItem('token', token);
+
+      // Set the token in the API headers
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+
+      toast.success('Login successful');
     } catch (error) {
-      console.error('Login failed:', error);
-      throw error;
+      console.error('Login failed:', error.response ? error.response.data : error.message);
+      toast.error('Login failed');
     }
   };
 
-  const value = {
-    user,
-    login,
-    logout,
-    loading,
-    isAuthenticated: !!user,
+  const logout = () => {
+    setUser(null);
+    setToken(null);
+    localStorage.removeItem('token');
+    delete api.defaults.headers.common['Authorization'];
+    toast.success('Logout successful');
   };
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{ user, token, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
 };
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
+export const useAuth = () => useContext(AuthContext);

@@ -1,4 +1,4 @@
-import { Fragment, useContext, useEffect, useState } from 'react';
+import React, { Fragment, useState, useEffect, useContext } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Disclosure, Menu, Transition } from '@headlessui/react';
 import { useAuth } from '../../context/AuthContext';
@@ -23,7 +23,7 @@ export default function Navbar() {
           api.get('/auth/microsoft/accounts'),
           api.get('/auth/gmail/accounts')
         ]);
-        setAccounts([...microsoftResponse.data, ...gmailResponse.data]);
+        setAccounts([...microsoftResponse.data, ...(gmailResponse.data || [])]);
       } catch (error) {
         console.error('Failed to fetch accounts:', error);
         toast.error('Failed to fetch accounts');

@@ -21,56 +21,85 @@ export default function JobReview() {
   const [selectedApplications, setSelectedApplications] = useState([]);
   const [dateFilter, setDateFilter] = useState('');
   const [aiScoreFilter, setAiScoreFilter] = useState('');
-  const { selectedAccount } = useContext(AccountContext);
+  const { accounts, selectedAccount, selectAccount } = useContext(AccountContext);
 
-  const fetchJobAndApplications = useCallback(async () => {
+  const fetchJobDetails = useCallback(async () => {
     try {
-      setError(null);
-      const [jobRes, appsRes] = await Promise.all([
-        api.get(`/jobs/${id}`),
-        api.get(`/applications?jobId=${id}`)
-      ]);
-      setJob(jobRes.data);
-      setApplications(appsRes.data);
+      const response = await api.get(`/jobs/${id}`);
+      setJob(response.data);
     } catch (error) {
-      setError('Failed to load job and applications');
-      toast.error('Failed to load data');
+      console.error('Failed to fetch job details:', error);
+      toast.error('Failed to fetch job details');
+      setError('Failed to fetch job details');
     } finally {
       setLoading(false);
     }
   }, [id]);
 
+  const fetchApplications = useCallback(async () => {
+    try {
+      const response = await api.get(`/applications?jobId=${id}`, {
+        headers: {
+          'Account-ID': selectedAccount?._id,
+        },
+      });
+      setApplications(response.data);
+    } catch (error) {
+      console.error('Failed to fetch applications:', error);
+      toast.error('Failed to fetch applications');
+      setError('Failed to fetch applications');
+    } finally {
+      setLoading(false);
+    }
+  }, [id, selectedAccount]);
+
   useEffect(() => {
-    fetchJobAndApplications();
-  }, [fetchJobAndApplications]);
+    fetchJobDetails();
+    if (selectedAccount) {
+      fetchApplications();
+    }
+  }, [fetchJobDetails, fetchApplications, selectedAccount]);
+
+  const handleAccountSelect = (event) => {
+    const selectedAccountId = event.target.value;
+    const account = accounts?.find(acc => acc._id === selectedAccountId);
+    selectAccount(account);
+    toast.success(`Selected ${account.email}`);
+  };
 
   const handleFetchEmails = async () => {
-    if (!job?.title) {
+    if (!job || !job.title) {
       toast.error('Job title is required');
       return;
     }
-  
     if (!selectedAccount) {
       toast.error('Please select an account before fetching emails');
       return;
     }
-  
     setProcessing(true);
     const toastId = toast.loading('Processing new applications...');
-  
+    
     try {
-      const response = await api.post(`/applications/fetch-emails?jobTitle=${encodeURIComponent(job.title)}`, { selectedAccount });
+      console.log('Fetching emails with job title:', job.title);
+      console.log('Selected account:', selectedAccount);
+  
+      const response = await api.post(`/applications/fetch-emails`, {
+        jobTitle: job.title,
+        selectedAccount
+      });
+  
       if (response.data.applications) {
-        await fetchJobAndApplications();
+        await fetchApplications();
         toast.success('Successfully processed new applications', { id: toastId });
       }
     } catch (error) {
+      console.error('Error fetching emails:', error);
       toast.error('Failed to process new applications', { id: toastId });
     } finally {
       setProcessing(false);
     }
   };
-  
+
   const handleToggleShortlist = async (applicationId) => {
     const toastId = toast.loading('Updating shortlist status...');
     try {
@@ -126,7 +155,7 @@ export default function JobReview() {
       toast.success('Application deleted successfully', { id: toastId });
       setShowDeleteModal(false);
       setSelectedApp(null);
-      await fetchJobAndApplications();
+      await fetchApplications();
     } catch (error) {
       toast.error('Failed to delete application', { id: toastId });
     }
@@ -138,7 +167,7 @@ export default function JobReview() {
       await api.post('/applications/delete-multiple', { applicationIds: selectedApplications });
       toast.success('Selected applications deleted successfully', { id: toastId });
       setSelectedApplications([]);
-      await fetchJobAndApplications();
+      await fetchApplications();
     } catch (error) {
       toast.error('Failed to delete selected applications', { id: toastId });
     }
@@ -188,7 +217,7 @@ export default function JobReview() {
         <div className="text-center">
           <h3 className="text-lg font-medium text-gray-900">Error Loading Data</h3>
           <p className="mt-1 text-sm text-gray-500">{error}</p>
-          <Button variant="primary" onClick={fetchJobAndApplications} className="mt-4">
+          <Button variant="primary" onClick={fetchJobDetails} className="mt-4">
             Retry
           </Button>
         </div>
@@ -204,6 +233,24 @@ export default function JobReview() {
           Created on {new Date(job.createdAt).toLocaleDateString()}
         </p>
         <div className="mt-4 prose max-w-none">{job.description}</div>
+      </div>
+
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">Job Review</h1>
+        <div>
+          <select
+            className="form-select rounded-md border-gray-300"
+            onChange={handleAccountSelect}
+            value={selectedAccount?._id || ''}
+          >
+            <option value="">Select Account</option>
+            {accounts?.map((account) => (
+              <option key={account._id} value={account._id}>
+                {account.email} ({account.provider})
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="mb-6 flex justify-between items-center">

@@ -9,9 +9,8 @@ const OAuthCredential = require('../models/OAuthCredential');
 
 exports.fetchEmails = async (req, res) => {
   try {
-    const { jobTitle } = req.query;
     const userId = req.user._id; // Ensure userId is retrieved from req.user
-    const selectedAccount = req.body.selectedAccount; // Get the selected account from the request body
+    const {jobTitle, selectedAccount} = req.body; // Get the selected account from the request body
 
     if (!jobTitle) {
       return res.status(400).json({ error: 'Job title is required' });

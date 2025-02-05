@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const applicationController = require('../controllers/applicationController');
+const { authenticateToken } = require('../middleware/auth');
 
 // Put specific routes before parameterized routes
-router.post('/fetch-emails', (req, res, next) => {
+router.post('/fetch-emails',  authenticateToken, (req, res, next) => {
   applicationController.fetchEmails(req, res, next);
 });
 

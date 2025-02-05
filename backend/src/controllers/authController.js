@@ -1,11 +1,10 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const config = require('../config/auth')
+const config = require('../config/auth');
 const microsoftService = require('../services/microsoftService');
 const OAuthCredential = require('../models/OAuthCredential');
-const msal = require('@azure/msal-node')
+const msal = require('@azure/msal-node');
 const gmailService = require('../services/gmailService');
-
 
 exports.login = async (req, res) => {
   try {
@@ -16,15 +15,10 @@ exports.login = async (req, res) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
-    const token = jwt.sign(
-      { userId: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '24h' }
-    );
-
-    res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+    const token = jwt.sign({ userId: user._id }, config.secret, { expiresIn: '1h' });
+    res.json({ token });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
 
@@ -72,7 +66,6 @@ exports.getMicrosoftAuthUrl = async (req, res) => {
     res.status(500).json({ error: 'Failed to generate auth URL' });
   }
 };
-
 
 exports.handleMicrosoftCallback = async (req, res) => {
   try {
@@ -156,17 +149,101 @@ exports.handleMicrosoftCallback = async (req, res) => {
 exports.getMicrosoftAccounts = async (req, res) => {
   try {
     const userId = req.user._id;
-    const accounts = await microsoftService.getMicrosoftAccounts(userId);
+    const accounts = await OAuthCredential.find({ userId, provider: 'microsoft' });
     res.json(accounts);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 };
 
+exports.getGmailAuthUrl = (req, res) => {
+  try {
+    // Generate a state token with user ID
+    const stateToken = jwt.sign({ userId: req.user._id }, config.secret);
+    const url = gmailService.getGmailAuthUrl(stateToken);
+    res.status(200).json({ url });
+  } catch (error) {
+    console.error('Gmail Auth URL Error:', error);
+    res.status(500).json({ error: 'Failed to generate auth URL' });
+  }
+};
+
+exports.handleGmailCallback = async (req, res) => {
+  const { code, state } = req.query;
+
+  try {
+    console.log('Starting Gmail callback handler');
+    console.log('Received state token:', state);
+    
+    const decoded = jwt.verify(state, config.secret);
+    console.log('Decoded token:', decoded);
+    
+    const userId = decoded.userId;
+    console.log('User ID:', userId);
+
+    const tokens = await gmailService.getGmailTokens(code);
+    console.log('Received Gmail tokens');
+
+    const userInfo = await gmailService.getUserInfo(tokens.access_token);
+    console.log('User email:', userInfo.email);
+
+    // Check existing credential
+    const existingCredential = await OAuthCredential.findOne({ 
+      email: userInfo.email,
+      provider: 'gmail'
+    });
+
+    if (existingCredential && existingCredential.userId.toString() !== userId) {
+      throw new Error('This Gmail account is already connected to another user');
+    }
+
+    // Calculate expiration date
+    const expiresAt = new Date();
+    if (tokens.expiry_time) {
+      expiresAt.setSeconds(expiresAt.getSeconds() + tokens.expiry_time);
+    } else {
+      // Default expiration of 1 hour if no expiry_time provided
+      expiresAt.setHours(expiresAt.getHours() + 1);
+    }
+
+    console.log('Expiration date:', expiresAt);
+
+    // Validate date before saving
+    if (isNaN(expiresAt.getTime())) {
+      throw new Error('Invalid expiration date');
+    }
+
+    // Create or update OAuth credentials
+    const oauthCredential = await OAuthCredential.findOneAndUpdate(
+      { 
+        userId,
+        email: userInfo.email,
+        provider: 'gmail'
+      },
+      {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token,
+        expiresAt: expiresAt
+      },
+      { 
+        upsert: true, 
+        new: true,
+        runValidators: true
+      }
+    );
+
+    console.log('Saved credential:', oauthCredential);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Gmail Callback Error:', error);
+    res.redirect(`${process.env.FRONTEND_URL}/oauth-callback?error=${encodeURIComponent(error.message)}`);
+  }
+};
+
 exports.getGmailAccounts = async (req, res) => {
   try {
     const userId = req.user._id;
-    const accounts = await gmailService.getGmailAccounts(userId);
+    const accounts = await OAuthCredential.find({ userId, provider: 'gmail' });
     res.json(accounts);
   } catch (error) {
     res.status(500).json({ error: error.message });
