@@ -1,55 +1,29 @@
-import React, { createContext, useState, useContext } from 'react';
-import api from '../services/api';
-import { toast } from 'react-toastify';
-import jwt_decode from 'jwt-decode';
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
-const AuthContext = createContext();
+const authenticateToken = async (req, res, next) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
 
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(null);
-
-  const login = async (email, password) => {
-    try {
-      const response = await api.post('/auth/login', { email, password });
-      console.log('Login response:', response.data);
-
-      const { token } = response.data;
-      if (!token) {
-        throw new Error('Invalid login response');
-      }
-
-      // Decode the token to get the user information
-      const decoded = jwt_decode(token);
-      const user = { id: decoded.userId, email };
-
-      setUser(user);
-      setToken(token);
-      localStorage.setItem('token', token);
-
-      // Set the token in the API headers
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-
-      toast.success('Login successful');
-    } catch (error) {
-      console.error('Login failed:', error.response ? error.response.data : error.message);
-      toast.error('Login failed');
+    if (!token) {
+      return res.status(401).json({ error: 'Access token required' });
     }
-  };
 
-  const logout = () => {
-    setUser(null);
-    setToken(null);
-    localStorage.removeItem('token');
-    delete api.defaults.headers.common['Authorization'];
-    toast.success('Logout successful');
-  };
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.userId);
 
-  return (
-    <AuthContext.Provider value={{ user, token, login, logout }}>
-      {children}
-    </AuthContext.Provider>
-  );
+    if (!user) {
+      return res.status(401).json({ error: 'User not found' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Invalid token' });
+  }
 };
 
-export const useAuth = () => useContext(AuthContext);
+module.exports = {
+  authenticateToken,
+};

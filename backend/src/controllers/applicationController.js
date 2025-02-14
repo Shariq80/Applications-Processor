@@ -6,97 +6,64 @@ const Job = require('../models/Job');
 const resumeParserService = require('../services/resumeParserService');
 const mongoose = require('mongoose');
 const OAuthCredential = require('../models/OAuthCredential');
+const ObjectId = mongoose.Types.ObjectId;
 
-exports.fetchEmails = async (req, res) => {
+exports.fetchMicrosoftEmails = async (req, res) => {
   try {
-    const userId = req.user._id; // Ensure userId is retrieved from req.user
-    const {jobTitle, selectedAccount} = req.body; // Get the selected account from the request body
+    const { userId, jobTitle } = req.body;
 
-    if (!jobTitle) {
-      return res.status(400).json({ error: 'Job title is required' });
+    const emails = await microsoftService.fetchEmails(userId, jobTitle);
+    const applications = [];
+
+    for (const email of emails) {
+      const emailData = await microsoftService.getEmailContent(userId, email.id);
+      const application = await exports.processMicrosoftEmail(userId, emailData, jobTitle);
+      applications.push(application);
     }
 
-    const existingJob = await Job.findOne({ title: new RegExp(jobTitle, 'i') });
-    if (!existingJob) {
-      return res.status(404).json({ error: `No job found matching "${jobTitle}". Please create the job first.` });
-    }
-
-    // Retrieve OAuth credentials
-    const activeCredential = await OAuthCredential.findOne({ userId, email: selectedAccount.email });
-    if (!activeCredential) {
-      return res.status(401).json({ error: 'No OAuth credentials found' });
-    }
-
-    let messages;
-    if (activeCredential.provider === 'microsoft') {
-      // Get authorized Microsoft client
-      const microsoft = await microsoftService.getAuthorizedClient(userId);
-      messages = await microsoftService.fetchEmails(userId, jobTitle);
-    } else if (activeCredential.provider === 'gmail') {
-      // Get authorized Gmail client
-      const gmail = await gmailService.getAuthorizedClient(userId);
-      messages = await gmailService.fetchEmails(userId, jobTitle);
-    } else {
-      return res.status(400).json({ error: 'Unsupported email provider' });
-    }
-
-    const existingMessageIds = await Application.distinct('emailMetadata.messageId', { job: existingJob._id });
-    const processedEmails = [];
-
-    for (const message of messages) {
-      if (existingMessageIds.includes(message.id)) continue;
-
-      const messageData = await (activeCredential.provider === 'microsoft'
-        ? microsoftService.getEmailContent(userId, message.id)
-        : gmailService.getEmailContent(userId, message.id));
-      if (!messageData.subject.toLowerCase().includes(jobTitle.toLowerCase())) continue;
-
-      const processedEmail = await this.processEmail(messageData, jobTitle, userId);
-      if (processedEmail) {
-        processedEmail.emailMetadata = { messageId: message.id, threadId: message.threadId };
-        await processedEmail.save();
-        processedEmails.push(processedEmail);
-      }
-    }
-
-    res.json({ success: true, applications: processedEmails, processed: processedEmails.length, total: messages.length });
+    res.status(200).json(applications);
   } catch (error) {
-    console.error('Error in fetchEmails:', error);
-    if (error.message === 'Refresh token is invalid. Please re-authenticate.') {
-      return res.status(401).json({ error: error.message });
-    }
-    res.status(500).json({ error: error.message || 'Failed to fetch emails' });
+    console.error('Error in fetchMicrosoftEmails:', error);
+    res.status(500).json({ error: error.message });
   }
 };
 
-exports.processEmail = async (emailData, jobTitle, userId) => {
+exports.fetchGmailEmails = async (req, res) => {
   try {
-    console.log('=== Starting processEmail ===');
-    
-    const subject = emailData.subject;
-    const from = emailData.from.emailAddress.address;
-    const fromName = emailData.from.emailAddress.name || from.split('@')[0]; // Extract name or use email prefix
+    const { userId, jobTitle } = req.body;
 
-    if (!subject || !from) {
-      throw new Error('Missing required email headers');
+    const emails = await gmailService.fetchEmails(userId, jobTitle);
+    const applications = [];
+
+    for (const email of emails) {
+      const emailContent = await gmailService.getEmailContent(email.id);
+      const application = await exports.processGmailEmail(userId, emailContent, jobTitle);
+      if (application) {
+        applications.push(application);
+      }
     }
 
-    if (!subject.toLowerCase().includes(jobTitle.toLowerCase())) {
-      throw new Error('Job title not found in subject');
-    }
+    res.status(200).json(applications); // Send the applications back to the client
+  } catch (error) {
+    console.error('Error in fetchGmailEmails:', error);
+    res.status(500).json({ error: error.message });
+  }
+};
 
-    const job = await Job.findOne({ 
-      title: { $regex: new RegExp(jobTitle, 'i') }
-    }).select('title description'); // Add description to the query
-    
+exports.processMicrosoftEmail = async (userId, emailData, jobTitle) => {
+  try {
+    console.log('=== Starting processMicrosoftEmail ===');
+
+    // Find the job by title
+    const job = await Job.findOne({ title: jobTitle });
     if (!job) {
-      throw new Error(`No matching job found for title: ${jobTitle}`);
+      throw new Error(`Job with title "${jobTitle}" not found`);
     }
 
     // Process attachments
     const attachments = [];
     let resumeText = '';
-    
+
     if (emailData.attachments && emailData.attachments.length > 0) {
       for (const attachment of emailData.attachments) {
         if (attachment.name.endsWith('.pdf') || attachment.name.endsWith('.doc') || attachment.name.endsWith('.docx')) {
@@ -120,17 +87,20 @@ exports.processEmail = async (emailData, jobTitle, userId) => {
     }
 
     // Get AI score and summary
-    const aiResult = await openaiService.scoreResume(resumeText, job.description);
+    const aiResult = await openaiService.scoreResume(resumeText, jobTitle);
 
     // Strip HTML tags from email body
     const emailBody = emailData.body.content.replace(/<\/?[^>]+(>|$)/g, "");
 
+    // Extract email address from the applicantEmail object
+    const applicantEmail = emailData.from.emailAddress.address;
+
     // Create application record
     const application = new Application({
-      job: job._id,
-      applicantEmail: from,
-      applicantName: fromName,
-      emailSubject: subject,
+      job: job._id, // Use job._id instead of jobTitle
+      applicantEmail: applicantEmail,
+      applicantName: emailData.from.emailAddress.name,
+      emailSubject: emailData.subject,
       emailBody: emailBody,
       attachments: attachments,
       resumeText: resumeText,
@@ -140,27 +110,115 @@ exports.processEmail = async (emailData, jobTitle, userId) => {
     });
 
     await application.save();
+
     return application;
 
   } catch (error) {
-    console.error('Error in processEmail:', error);
+    console.error('Error in processMicrosoftEmail:', error);
     throw error;
   }
 };
+
+exports.processGmailEmail = async (userId, emailData, jobTitle) => {
+  try {
+    console.log('=== Starting processGmailEmail ===');
+    console.log('Email Data:', JSON.stringify(emailData, null, 2));
+
+    // Find the job by title
+    const job = await Job.findOne({ title: jobTitle });
+    if (!job) {
+      throw new Error(`Job with title "${jobTitle}" not found`);
+    }
+
+    // Process attachments
+    const attachments = [];
+    let resumeText = '';
+
+    if (emailData.attachments && emailData.attachments.length > 0) {
+      for (const attachment of emailData.attachments) {
+        console.log(`Processing attachment: ${attachment.name}`);
+        if (attachment.name.endsWith('.pdf') || attachment.name.endsWith('.doc') || attachment.name.endsWith('.docx')) {
+          console.log(`Fetching attachment: ${attachment.name} with ID: ${attachment.id}`);
+          const attachmentData = await gmailService.getAttachment(emailData.id, attachment.id);
+          attachments.push({
+            filename: attachment.name,
+            contentType: attachment.mimeType,
+            data: attachmentData
+          });
+
+          // Get resume text for the first attachment only
+          if (!resumeText) {
+            console.log(`Parsing resume: ${attachment.name}`);
+            resumeText = await resumeParserService.parseResume(attachmentData, attachment.name);
+            console.log(`Parsed resume text: ${resumeText}`);
+          }
+        } else {
+          console.log(`Skipping unsupported attachment type: ${attachment.name}`);
+        }
+      }
+    } else {
+      console.log('No attachments found in email data');
+    }
+
+    if (attachments.length === 0) {
+      console.warn('No valid attachments found for email:', emailData.id);
+      return null; // Exit gracefully if no valid attachments are found
+    }
+
+    // Get AI score and summary
+    console.log('Scoring resume with AI');
+    const aiResult = await openaiService.scoreResume(resumeText, jobTitle);
+    console.log('AI Result:', aiResult);
+
+    // Strip HTML tags from email body
+    const emailBody = emailData.body ? emailData.body.replace(/<\/?[^>]+(>|$)/g, "") : "";
+
+    // Extract applicant's name and email from emailData
+    const applicantEmail = emailData.from;
+    const applicantName = emailData.from.split('<')[0].trim(); // Extract name from "Name <email>"
+
+    // Create application record
+    const application = new Application({
+      job: job._id, // Use job._id instead of jobTitle
+      applicantEmail: applicantEmail,
+      applicantName: applicantName,
+      emailSubject: emailData.subject,
+      emailBody: emailBody,
+      attachments: attachments,
+      resumeText: resumeText,
+      aiScore: aiResult.score,
+      aiSummary: aiResult.summary,
+      processedBy: userId
+    });
+
+    console.log('Saving application to database');
+    await application.save();
+    console.log('Application saved successfully');
+
+    // Mark email as read
+    console.log(`Marking email as read: ${emailData.id}`);
+    await gmailService.markEmailAsRead(emailData.id);
+    console.log(`Email marked as read: ${emailData.id}`);
+
+    return application;
+
+  } catch (error) {
+    console.error('Error in processGmailEmail:', error);
+    throw error;
+  }
+};
+
 exports.getAllApplications = async (req, res) => {
   try {
     const { jobId } = req.query;
     const query = { processedBy: req.user._id };
-    
+
     if (jobId) {
       query.job = jobId;
     }
-    
-    const applications = await Application.find(query)
-      .populate('job')
-      .sort({ createdAt: -1 });
-      
-    res.json(applications);
+
+    const applications = await Application.find(query).populate('job');
+    res.status(200).json(applications);
   } catch (error) {
     console.error('Error in getAllApplications:', error);
     res.status(500).json({ error: error.message });
@@ -179,8 +237,6 @@ exports.getApplication = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
-
 
 exports.downloadAttachment = async (req, res) => {
   try {
@@ -222,7 +278,7 @@ exports.toggleShortlist = async (req, res) => {
     
     res.json({ 
       isShortlisted: application.isShortlisted,
-      message: `Application ${application.isShortlisted ? 'shortlisted' : 'removed from shortlist'}`
+      message: `Application ${application.isShortlisted ? 'shortlisted' : 'removed from shortlist'}` 
     });
   } catch (error) {
     console.error('Error in toggleShortlist:', error);
@@ -344,7 +400,6 @@ exports.deleteApplication = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
-
 
 exports.deleteMultipleApplications = async (req, res) => {
   try {

@@ -1,4 +1,4 @@
-import React, { createContext, useState, useEffect } from 'react';
+import React, { createContext, useState } from 'react';
 
 export const AccountContext = createContext({
   selectedAccount: null,
@@ -7,13 +7,13 @@ export const AccountContext = createContext({
 
 export const AccountProvider = ({ children }) => {
   const [selectedAccount, setSelectedAccount] = useState(() => {
-    const savedAccount = localStorage.getItem('selectedAccount');
+    const savedAccount = sessionStorage.getItem('selectedAccount');
     return savedAccount ? JSON.parse(savedAccount) : null;
   });
 
   const selectAccount = (account) => {
     setSelectedAccount(account);
-    localStorage.setItem('selectedAccount', JSON.stringify(account));
+    sessionStorage.setItem('selectedAccount', JSON.stringify(account));
   };
 
   const value = {

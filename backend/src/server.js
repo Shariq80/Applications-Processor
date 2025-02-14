@@ -1,4 +1,5 @@
 const express = require('express');
+const http = require('http');
 const mongoose = require('mongoose');
 const cors = require('cors');
 require('dotenv').config();
@@ -9,17 +10,12 @@ const userRoutes = require('./routes/userRoutes');
 const applicationRoutes = require('./routes/applicationRoutes');
 const { authenticateToken } = require('./middleware/auth');
 const errorHandler = require('./middleware/errorHandler');
-const app = express();
 
-// Middleware
+const app = express();
+const server = http.createServer(app);
+
 app.use(cors());
 app.use(express.json());
-app.use(errorHandler);
-
-// Database connection
-const db = require('./config/database');
-db.connect()
-  .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
 app.use('/auth', authRoutes);
@@ -28,12 +24,15 @@ app.use('/applications', authenticateToken, applicationRoutes);
 app.use('/users', authenticateToken, userRoutes);
 
 // Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Something went wrong!' });
-});
+app.use(errorHandler);
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// Database connection
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => {
+    console.log('Connected to MongoDB');
+    const PORT = process.env.PORT || 3000;
+    server.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+  })
+  .catch(err => console.error('Could not connect to MongoDB', err));

@@ -127,17 +127,19 @@ exports.handleMicrosoftCallback = async (req, res) => {
 
     console.log('Expires At:', expiresAt);
 
-    // Save the credentials to the database
-    const credentials = new OAuthCredential({
-      userId,
-      email,
-      accessToken,
-      refreshToken: refreshToken || 'dummy_refresh_token', // Ensure refreshToken is set
-      expiresAt,
-      provider: 'microsoft',
-    });
-
-    await credentials.save();
+    // Save or update the credentials in the database
+    const credentials = await OAuthCredential.findOneAndUpdate(
+      { email, provider: 'microsoft' },
+      {
+        userId,
+        email,
+        accessToken,
+        refreshToken: refreshToken || 'dummy_refresh_token', // Ensure refreshToken is set
+        expiresAt,
+        provider: 'microsoft',
+      },
+      { upsert: true, new: true, runValidators: true }
+    );
 
     res.json({ success: true });
   } catch (error) {

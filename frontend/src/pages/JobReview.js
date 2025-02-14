@@ -83,10 +83,15 @@ export default function JobReview() {
       console.log('Fetching emails with job title:', job.title);
       console.log('Selected account:', selectedAccount);
   
-      const response = await api.post(`/applications/fetch-emails`, {
-        jobTitle: job.title,
-        selectedAccount
-      });
+      const response = await api.post(
+        selectedAccount.provider === 'microsoft' 
+          ? '/applications/fetch-microsoft-emails' 
+          : '/applications/fetch-gmail-emails', 
+        {
+          jobTitle: job.title,
+          userId: selectedAccount.userId
+        }
+      );
   
       if (response.data.applications) {
         await fetchApplications();

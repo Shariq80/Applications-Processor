@@ -45,7 +45,7 @@ const getGmailTokens = async (code, userId) => {
       { userId: userId, provider: 'gmail' },
       {
         accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
+        refreshToken: tokens.refresh_token || 'dummy_refresh_token', // Ensure refreshToken is set
         expiresAt: new Date(Date.now() + tokens.expiry_time * 1000),
       },
       { upsert: true, new: true }
@@ -59,7 +59,6 @@ const getGmailTokens = async (code, userId) => {
 };
 
 const getAuthorizedClient = async (userId) => {
-  // Fetch OAuth credentials from the database
   const credential = await OAuthCredential.findOne({ userId, provider: 'gmail' });
   if (!credential) {
     throw new Error('No OAuth credentials found for Gmail');
@@ -69,7 +68,6 @@ const getAuthorizedClient = async (userId) => {
     refresh_token: credential.refreshToken,
   });
 
-  // Check if the token is expired
   if (new Date() >= new Date(credential.expiresAt)) {
     console.log('Access token is expired, refreshing...');
     await refreshAccessToken(userId);
@@ -82,6 +80,10 @@ const refreshAccessToken = async (userId) => {
   const credential = await OAuthCredential.findOne({ userId, provider: 'gmail' });
   if (!credential) {
     throw new Error('No OAuth credentials found for Gmail');
+  }
+
+  if (!credential.refreshToken) {
+    throw new Error('No refresh token is set');
   }
 
   oauth2Client.setCredentials({
@@ -112,21 +114,72 @@ const fetchEmails = async (userId, jobTitle) => {
   return res.data.messages || [];
 };
 
+const getAttachment = async (messageId, attachmentId) => {
+  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+  const res = await gmail.users.messages.attachments.get({
+    userId: 'me',
+    messageId: messageId,
+    id: attachmentId,
+  });
+  return Buffer.from(res.data.data, 'base64');
+};
+
 const getEmailContent = async (messageId) => {
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
   const res = await gmail.users.messages.get({
     userId: 'me',
     id: messageId,
+    format: 'full',
   });
   const message = res.data;
-  const body = message.payload.parts.find(part => part.mimeType === 'text/plain').body.data;
-  const decodedBody = Buffer.from(body, 'base64').toString('utf-8');
+
+  // Extract the body content
+  let body = '';
+  if (message.payload.parts) {
+    for (const part of message.payload.parts) {
+      if (part.mimeType === 'text/plain' && part.body.data) {
+        body += Buffer.from(part.body.data, 'base64').toString('utf-8');
+      } else if (part.mimeType === 'text/html' && part.body.data) {
+        body += Buffer.from(part.body.data, 'base64').toString('utf-8');
+      }
+    }
+  } else if (message.payload.body.data) {
+    body = Buffer.from(message.payload.body.data, 'base64').toString('utf-8');
+  }
+
+  // Extract attachments
+  const attachments = [];
+  if (message.payload.parts) {
+    for (const part of message.payload.parts) {
+      if (part.filename && part.body && part.body.attachmentId) {
+        attachments.push({
+          id: part.body.attachmentId,
+          name: part.filename,
+          mimeType: part.mimeType,
+        });
+      }
+    }
+  }
+
   return {
+    id: messageId, // Include the messageId in the returned object
     subject: message.payload.headers.find(header => header.name === 'Subject').value,
     from: message.payload.headers.find(header => header.name === 'From').value,
     date: message.payload.headers.find(header => header.name === 'Date').value,
-    body: decodedBody,
+    body: body,
+    attachments: attachments,
   };
+};
+
+const markEmailAsRead = async (messageId) => {
+  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+  await gmail.users.messages.modify({
+    userId: 'me',
+    id: messageId,
+    requestBody: {
+      removeLabelIds: ['UNREAD']
+    }
+  });
 };
 
 const getUserInfo = async (accessToken) => {
@@ -142,6 +195,8 @@ module.exports = {
   getAuthorizedClient,
   fetchEmails,
   getEmailContent,
+  getAttachment,
+  markEmailAsRead,
   getUserInfo,
   refreshAccessToken,
 };
