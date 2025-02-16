@@ -21,6 +21,7 @@ export default function JobReview() {
   const [selectedApplications, setSelectedApplications] = useState([]);
   const [dateFilter, setDateFilter] = useState('');
   const [aiScoreFilter, setAiScoreFilter] = useState('');
+  const [emailCount, setEmailCount] = useState(0); // Add state for email count
   const { accounts, selectedAccount, selectAccount } = useContext(AccountContext);
 
   const fetchJobDetails = useCallback(async () => {
@@ -37,18 +38,28 @@ export default function JobReview() {
   }, [id]);
 
   const fetchApplications = useCallback(async () => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
     try {
       const response = await api.get(`/applications?jobId=${id}`, {
         headers: {
           'Account-ID': selectedAccount?._id,
         },
+        signal: controller.signal,
       });
       setApplications(response.data);
     } catch (error) {
-      console.error('Failed to fetch applications:', error);
-      toast.error('Failed to fetch applications');
+      if (error.name === 'AbortError') {
+        console.error('Fetch applications request timed out');
+        toast.error('Fetch applications request timed out');
+      } else {
+        console.error('Failed to fetch applications:', error);
+        toast.error('Failed to fetch applications');
+      }
       setError('Failed to fetch applications');
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   }, [id, selectedAccount]);
@@ -59,6 +70,16 @@ export default function JobReview() {
       fetchApplications();
     }
   }, [fetchJobDetails, fetchApplications, selectedAccount]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      if (selectedAccount) {
+        fetchApplications();
+      }
+    }, 5000); // Poll every 5 seconds
+
+    return () => clearInterval(intervalId);
+  }, [fetchApplications, selectedAccount]);
 
   const handleAccountSelect = (event) => {
     const selectedAccountId = event.target.value;
@@ -79,6 +100,9 @@ export default function JobReview() {
     setProcessing(true);
     const toastId = toast.loading('Processing new applications...');
     
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
     try {
       console.log('Fetching emails with job title:', job.title);
       console.log('Selected account:', selectedAccount);
@@ -90,19 +114,45 @@ export default function JobReview() {
         {
           jobTitle: job.title,
           userId: selectedAccount.userId
-        }
+        },
+        { signal: controller.signal }
       );
   
       if (response.data.applications) {
+        const totalApplications = response.data.applications.length;
+        let processedCount = 0;
+
+        for (let i = 0; i < totalApplications; i += 20) { // Process in batches of 20
+          const batch = response.data.applications.slice(i, i + 20);
+          // Process each batch (you can implement your batch processing logic here)
+          await processBatch(batch);
+          processedCount += batch.length;
+          toast.success(`Processed ${processedCount} out of ${totalApplications} applications`, { id: toastId });
+        }
+
+        setEmailCount(totalApplications); // Update email count
         await fetchApplications();
-        toast.success('Successfully processed new applications', { id: toastId });
+        toast.success(`Successfully processed ${totalApplications} new applications`, { id: toastId });
       }
     } catch (error) {
-      console.error('Error fetching emails:', error);
-      toast.error('Failed to process new applications', { id: toastId });
+      if (error.name === 'AbortError') {
+        console.error('Fetch emails request timed out');
+        toast.error('Fetch emails request timed out', { id: toastId });
+      } else {
+        console.error('Error fetching emails:', error);
+        toast.error('Failed to process new applications', { id: toastId });
+      }
     } finally {
+      clearTimeout(timeoutId);
       setProcessing(false);
+      setTimeout(() => toast.dismiss(toastId), 5000); // Dismiss the toast after 5 seconds
     }
+  };
+
+  const processBatch = async (batch) => {
+    // Implement your batch processing logic here
+    // For example, you can send a request to the backend to process the batch
+    await api.post('/applications/process-batch', { applications: batch });
   };
 
   const handleToggleShortlist = async (applicationId) => {
@@ -240,23 +290,8 @@ export default function JobReview() {
         <div className="mt-4 prose max-w-none">{job.description}</div>
       </div>
 
-      <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Job Review</h1>
-        <div>
-          <select
-            className="form-select rounded-md border-gray-300"
-            onChange={handleAccountSelect}
-            value={selectedAccount?._id || ''}
-          >
-            <option value="">Select Account</option>
-            {accounts?.map((account) => (
-              <option key={account._id} value={account._id}>
-                {account.email} ({account.provider})
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+
 
       <div className="mb-6 flex justify-between items-center">
         <Button
@@ -266,6 +301,11 @@ export default function JobReview() {
         >
           Process New Applications
         </Button>
+        {emailCount > 0 && (
+          <p className="text-sm text-gray-500">
+            {emailCount} new applications processed
+          </p>
+        )}
 
         <div className="flex space-x-4">
           <Button

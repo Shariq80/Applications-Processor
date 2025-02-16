@@ -110,6 +110,7 @@ const fetchEmails = async (userId, jobTitle) => {
   const res = await gmail.users.messages.list({
     userId: 'me',
     q: `subject:${jobTitle}`,
+    labelIds: ['UNREAD']
   });
   return res.data.messages || [];
 };
