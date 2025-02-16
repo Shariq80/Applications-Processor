@@ -217,7 +217,11 @@ exports.getAllApplications = async (req, res) => {
       query.job = jobId;
     }
 
-    const applications = await Application.find(query).populate('job');
+    const applications = await Application.find(query)
+      .populate('job')
+      .sort({ createdAt: -1 }) // Add sorting if needed
+      .allowDiskUse(true); // Enable disk usage for sorting
+
     res.status(200).json(applications);
   } catch (error) {
     console.error('Error in getAllApplications:', error);

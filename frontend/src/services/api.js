@@ -7,6 +7,20 @@ const api = axios.create({
   },
 });
 
+// Add a request interceptor
+api.interceptors.request.use(
+  (config) => {
+    const token = sessionStorage.getItem('token');
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 // Add this after the api creation
 api.downloadAttachment = async (applicationId, attachmentId) => {
   try {
@@ -19,11 +33,5 @@ api.downloadAttachment = async (applicationId, attachmentId) => {
     throw error;
   }
 };
-
-// Set the token from localStorage if it exists
-const token = localStorage.getItem('token');
-if (token) {
-  api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-}
 
 export default api;
